@@ -4,21 +4,45 @@ REPO="https://api.github.com/repos/itdoginfo/podkop/releases/latest"
 
 IS_SHOULD_RESTART_NETWORK=
 DOWNLOAD_DIR="/tmp/podkop"
-COUNT=3
-
-rm -rf "$DOWNLOAD_DIR"
 mkdir -p "$DOWNLOAD_DIR"
 
 main() {
     check_system
-    sing_box
-    
+
+    wget -qO- "$REPO" | grep -o 'https://[^"]*\.ipk' | while read -r url; do
+        filename=$(basename "$url")
+        echo "Download $filename..."
+        wget -q -O "$DOWNLOAD_DIR/$filename" "$url"
+    done
+
+    echo "opkg update"
     opkg update
-  
+
+    if opkg list-installed | grep -q dnsmasq-full; then
+        echo "dnsmasq-full already installed"
+    else
+        echo "Installed dnsmasq-full"
+        cd /tmp/ && opkg download dnsmasq-full
+        opkg remove dnsmasq && opkg install dnsmasq-full --cache /tmp/
+
+        [ -f /etc/config/dhcp-opkg ] && cp /etc/config/dhcp /etc/config/dhcp-old && mv /etc/config/dhcp-opkg /etc/config/dhcp
+    fi
+
+    openwrt_release=$(cat /etc/openwrt_release | grep -Eo [0-9]{2}[.][0-9]{2}[.][0-9]* | cut -d '.' -f 1 | tail -n 1)
+    if [ $openwrt_release -ge 24 ]; then
+        if uci get dhcp.@dnsmasq[0].confdir | grep -q /tmp/dnsmasq.d; then
+            echo "confdir alreadt set"
+        else
+            printf "Setting confdir"
+            uci set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d'
+            uci commit dhcp
+        fi
+    fi
+    
     if [ -f "/etc/init.d/podkop" ]; then
         printf "\033[32;1mPodkop is already installed. Just upgrade it? (y/n)\033[0m\n"
         printf "\033[32;1my - Only upgrade podkop\033[0m\n"
-        printf "\033[32;1mn - Upgrade and install tunnels (WG, AWG, OpenVPN, OC)\033[0m\n"
+        printf "\033[32;1mn - Upgrade and install proxy or tunnels\033[0m\n"
 
         while true; do
             read -r -p '' UPDATE
@@ -43,66 +67,29 @@ main() {
         add_tunnel
     fi
 
-    download_success=0
-    while read -r url; do
-        filename=$(basename "$url")
-        filepath="$DOWNLOAD_DIR/$filename"
-               
-        attempt=0
-        while [ $attempt -lt $COUNT ]; do
-            echo "Download $filename (count $((attempt+1)))..."
-            if wget -q -O "$filepath" "$url"; then
-                if [ -s "$filepath" ]; then
-                    echo "$filename successfully downloaded"
-                    download_success=1
-                    break
-                fi
-            fi
-            echo "Download error $filename. Retry..."
-            rm -f "$filepath"
-            attempt=$((attempt+1))
-        done
-        
-        if [ $attempt -eq $COUNT ]; then
-            echo "Failed to download $filename after $COUNT attempts"
-        fi
-    done < <(wget -qO- "$REPO" | grep -o 'https://[^"[:space:]]*\.ipk')
-    
-    if [ $download_success -eq 0 ]; then
-        echo "No packages were downloaded successfully"
-        exit 1
-    fi
-    
-    for pkg in podkop luci-app-podkop; do
-        file=$(ls "$DOWNLOAD_DIR" | grep "^$pkg" | head -n 1)
-        if [ -n "$file" ]; then
-            echo "Installing $file"
-            opkg install "$DOWNLOAD_DIR/$file"
-            sleep 3
-        fi
+    opkg install $DOWNLOAD_DIR/podkop*.ipk
+    opkg install $DOWNLOAD_DIR/luci-app-podkop*.ipk
+
+    echo "Русский язык интерфейса ставим? y/n (Need a Russian translation?)"
+    while true; do
+        read -r -p '' RUS
+        case $RUS in
+        y)
+            opkg install $DOWNLOAD_DIR/luci-i18n-podkop-ru*.ipk
+            break
+            ;;
+
+        n)
+            break
+            ;;
+
+        *)
+            echo "Please enter y or n"
+            ;;
+        esac
     done
 
-    ru=$(ls "$DOWNLOAD_DIR" | grep "luci-i18n-podkop-ru" | head -n 1)
-    if [ -n "$ru" ]; then
-        printf "\033[32;1mРусский язык интерфейса ставим? y/n (Need a Russian translation?)\033[0m "
-        while true; do
-            read -r -p '' RUS
-            case $RUS in
-            y)
-                opkg install "$DOWNLOAD_DIR/$ru"
-                break
-                ;;
-            n)
-                break
-                ;;
-            *)
-                echo "Введите y или n"
-                ;;
-            esac
-        done
-    fi
-
-    find "$DOWNLOAD_DIR" -type f -name '*podkop*' -exec rm {} \;
+    rm -f $DOWNLOAD_DIR/podkop*.ipk $DOWNLOAD_DIR/luci-app-podkop*.ipk $DOWNLOAD_DIR/luci-i18n-podkop-ru*.ipk
 
     if [ "$IS_SHOULD_RESTART_NETWORK" ]; then
         printf "\033[32;1mRestart network\033[0m\n"
@@ -111,18 +98,24 @@ main() {
 }
 
 add_tunnel() {
-    printf "\033[32;1mWill you be using Wireguard, AmneziaWG, OpenVPN, OpenConnect? If yes, select a number and they will be automatically installed\033[0m\n"
-    echo "1) Wireguard"
-    echo "2) AmneziaWG"
-    echo "3) OpenVPN"
-    echo "4) OpenConnect"
-    echo "5) I use VLESS/SS. Skip this step"
+    echo "What type of VPN or proxy will be used? We also can automatically configure Wireguard and Amnezia WireGuard."
+    echo "1) VLESS, Shadowsocks (A sing-box will be installed)"
+    echo "2) Wireguard"
+    echo "3) AmneziaWG"
+    echo "4) OpenVPN"
+    echo "5) OpenConnect"
+    echo "6) Skip this step"
 
     while true; do
         read -r -p '' TUNNEL
         case $TUNNEL in
 
         1)
+            opkg install sing-box
+            break
+            ;;
+
+        2)
             opkg install wireguard-tools luci-proto-wireguard luci-app-wireguard
 
             printf "\033[32;1mDo you want to configure the wireguard interface? (y/n): \033[0m\n"
@@ -137,7 +130,7 @@ add_tunnel() {
             break
             ;;
 
-        2)
+        3)
             install_awg_packages
 
             printf "\033[32;1mThere are no instructions for manual configure yet. Do you want to configure the amneziawg interface? (y/n): \033[0m\n"
@@ -150,20 +143,20 @@ add_tunnel() {
             break
             ;;
 
-        3)
+        4)
             opkg install opkg install openvpn-openssl luci-app-openvpn
             printf "\e[1;32mUse these instructions to configure https://itdog.info/nastrojka-klienta-openvpn-na-openwrt/\e[0m\n"
             break
             ;;
 
-        4)
+        5)
             opkg install opkg install openconnect luci-proto-openconnect
             printf "\e[1;32mUse these instructions to configure https://itdog.info/nastrojka-klienta-openconnect-na-openwrt/\e[0m\n"
             break
             ;;
 
-        5)
-            echo "Installation without additional dependencies."
+        6)
+            echo "Skip. Use this if you're installing an upgrade."
             break
             ;;
 
@@ -179,7 +172,77 @@ handler_network_restart() {
 }
 
 install_awg_packages() {
-   
+    # Получение pkgarch с наибольшим приоритетом
+    KGARCH=$(opkg print-architecture | awk 'BEGIN {max=0} {if ($3 > max) {max = $3; arch = $2}} END {print arch}')
+
+# استخدم ubus لاستخراج TARGET و SUBTARGET و VERSION
+TARGET=$(ubus call system board | jsonfilter -e '@.release.target' | cut -d '/' -f 1)
+SUBTARGET=$(ubus call system board | jsonfilter -e '@.release.target' | cut -d '/' -f 2)
+VERSION=$(ubus call system board | jsonfilter -e '@.release.version')
+
+# التحقق من القيم
+echo "PKGARCH: $PKGARCH"
+echo "TARGET: $TARGET"
+echo "SUBTARGET: $SUBTARGET"
+echo "VERSION: $VERSION"
+
+     # إنشاء صيغة لاحقة الحزمة
+    PKGPOSTFIX="_v${VERSION}_${PKGARCH}_${TARGET}_${SUBTARGET}.ipk"
+    echo "Computed PKGPOSTFIX: $PKGPOSTFIX"
+
+    # إنشاء رابط التنزيل
+    BASE_URL="https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/"
+
+    AWG_DIR="/tmp/amneziawg"
+    mkdir -p "$AWG_DIR"
+    
+    if opkg list-installed | grep -q kmod-amneziawg; then
+        echo "kmod-amneziawg already installed"
+    else
+        KMOD_AMNEZIAWG_FILENAME="kmod-amneziawg${PKGPOSTFIX}"
+        DOWNLOAD_URL="${BASE_URL}v${VERSION}/${KMOD_AMNEZIAWG_FILENAME}"
+        wget -O "$AWG_DIR/$KMOD_AMNEZIAWG_FILENAME" "$DOWNLOAD_URL"
+
+        if [ $? -eq 0 ]; then
+            echo "kmod-amneziawg file downloaded successfully"
+        else
+            echo "Error downloading kmod-amneziawg. Please, install kmod-amneziawg manually and run the script again"
+            exit 1
+        fi
+        
+        opkg install "$AWG_DIR/$KMOD_AMNEZIAWG_FILENAME"
+
+        if [ $? -eq 0 ]; then
+            echo "kmod-amneziawg file downloaded successfully"
+        else
+            echo "Error installing kmod-amneziawg. Please, install kmod-amneziawg manually and run the script again"
+            exit 1
+        fi
+    fi
+
+    if opkg list-installed | grep -q amneziawg-tools; then
+        echo "amneziawg-tools already installed"
+    else
+        AMNEZIAWG_TOOLS_FILENAME="amneziawg-tools${PKGPOSTFIX}"
+        DOWNLOAD_URL="${BASE_URL}v${VERSION}/${AMNEZIAWG_TOOLS_FILENAME}"
+        wget -O "$AWG_DIR/$AMNEZIAWG_TOOLS_FILENAME" "$DOWNLOAD_URL"
+
+        if [ $? -eq 0 ]; then
+            echo "amneziawg-tools file downloaded successfully"
+        else
+            echo "Error downloading amneziawg-tools. Please, install amneziawg-tools manually and run the script again"
+            exit 1
+        fi
+
+        opkg install "$AWG_DIR/$AMNEZIAWG_TOOLS_FILENAME"
+
+        if [ $? -eq 0 ]; then
+            echo "amneziawg-tools file downloaded successfully"
+        else
+            echo "Error installing amneziawg-tools. Please, install amneziawg-tools manually and run the script again"
+            exit 1
+        fi
+    fi
     
     if opkg list-installed | grep -q luci-app-amneziawg; then
         echo "luci-app-amneziawg already installed"
@@ -343,36 +406,18 @@ check_system() {
     echo "Router model: $MODEL"
 
     # Check available space
-    AVAILABLE_SPACE=$(df /overlay | awk 'NR==2 {print $4}')
-    REQUIRED_SPACE=15360 # 15MB in KB
+    AVAILABLE_SPACE=$(df /tmp | awk 'NR==2 {print $4}')
+    # Change after switch sing-box
+    REQUIRED_SPACE=1024 # 20MB in KB
+
+    echo "Available space: $((AVAILABLE_SPACE/1024))MB"
+    echo "Required space: $((REQUIRED_SPACE/1024))MB"
 
     if [ "$AVAILABLE_SPACE" -lt "$REQUIRED_SPACE" ]; then
-        printf "\033[31;1mError: Insufficient space in flash\033[0m\n"
+        echo "Error: Insufficient space in /tmp"
         echo "Available: $((AVAILABLE_SPACE/1024))MB"
         echo "Required: $((REQUIRED_SPACE/1024))MB"
         exit 1
-    fi
-
-    if ! nslookup google.com >/dev/null 2>&1; then
-        printf "\033[31;1mDNS not working\033[0m\n"
-        exit 1
-    fi
-
-    if opkg list-installed | grep -qE "iptables|kmod-iptab"; then
-        printf "\033[31;1mFound incompatible iptables packages. If you're using FriendlyWrt: https://t.me/itdogchat/44512/181082\033[0m\n"
-    fi
-}
-
-sing_box() {
-    if ! opkg list-installed | grep -q "^sing-box"; then
-        return
-    fi
-
-    sing_box_version=$(sing-box version | head -n 1 | awk '{print $3}')
-    required_version="1.11.1"
-
-    if [ "$(echo -e "$sing_box_version\n$required_version" | sort -V | head -n 1)" != "$required_version" ]; then
-        opkg remove sing-box
     fi
 }
 
