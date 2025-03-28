@@ -191,7 +191,21 @@ echo "VERSION: $VERSION"
     echo "Computed PKGPOSTFIX: $PKGPOSTFIX"
 
     # إنشاء رابط التنزيل
-    BASE_URL="https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/"
+   PACKAGE_URL="https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/v24.10.0/amneziawg-tools_v24.10.0_aarch64_generic_armsr_armv8.ipk"
+PACKAGE_LOCAL_PATH="/tmp/amneziawg-tools.ipk"
+
+# تنزيل الحزمة مباشرة من الرابط
+echo "Downloading package from $PACKAGE_URL"
+wget -O $PACKAGE_LOCAL_PATH "$PACKAGE_URL"
+
+# التحقق من نجاح عملية التنزيل
+if [ $? -eq 0 ]; then
+    echo "Package downloaded successfully. Installing..."
+    opkg install $PACKAGE_LOCAL_PATH
+else
+    echo "Failed to download the package from $PACKAGE_URL. Please check the URL or your network connection."
+    exit 1
+fi
 
     AWG_DIR="/tmp/amneziawg"
     mkdir -p "$AWG_DIR"
