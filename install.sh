@@ -185,8 +185,13 @@ install_awg_packages() {
     TARGET=$(ubus call system board | jsonfilter -e '@.release.target' | cut -d '/' -f 1)
     SUBTARGET=$(ubus call system board | jsonfilter -e '@.release.target' | cut -d '/' -f 2)
     VERSION=$(ubus call system board | jsonfilter -e '@.release.version')
+
+    # تحديد اسم الحزمة بناءً على إصدار OpenWRT ومعماريته
     PKGPOSTFIX="_v${VERSION}_${PKGARCH}_${TARGET}_${SUBTARGET}.ipk"
+    
+    # رابط الحزمة من GitHub (يمكنك تعديله حسب الحاجة)
     BASE_URL="https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/"
+    PACKAGE_NAME="awg-package${PKGPOSTFIX}"
 
     AWG_DIR="/tmp/amneziawg"
     mkdir -p "$AWG_DIR"
