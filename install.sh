@@ -172,23 +172,6 @@ handler_network_restart() {
 }
 
 install_awg_packages() {
-    # Получение pkgarch с наибольшим приоритетом
-    KGARCH=$(opkg print-architecture | awk 'BEGIN {max=0} {if ($3 > max) {max = $3; arch = $2}} END {print arch}')
-
-# استخدم ubus لاستخراج TARGET و SUBTARGET و VERSION
-TARGET=$(ubus call system board | jsonfilter -e '@.release.target' | cut -d '/' -f 1)
-SUBTARGET=$(ubus call system board | jsonfilter -e '@.release.target' | cut -d '/' -f 2)
-VERSION=$(ubus call system board | jsonfilter -e '@.release.version')
-
-# التحقق من القيم
-echo "PKGARCH: $PKGARCH"
-echo "TARGET: $TARGET"
-echo "SUBTARGET: $SUBTARGET"
-echo "VERSION: $VERSION"
-
-     # إنشاء صيغة لاحقة الحزمة
-    PKGPOSTFIX="_v${VERSION}_${PKGARCH}_${TARGET}_${SUBTARGET}.ipk"
-    echo "Computed PKGPOSTFIX: $PKGPOSTFIX"
 
     # إنشاء رابط التنزيل
    PACKAGE_URL="https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/v24.10.0/amneziawg-tools_v24.10.0_aarch64_generic_armsr_armv8.ipk"
@@ -205,11 +188,7 @@ if [ $? -eq 0 ]; then
 else
     echo "Failed to download the package from $PACKAGE_URL. Please check the URL or your network connection."
     exit 1
-fi
 
-    AWG_DIR="/tmp/amneziawg"
-    mkdir -p "$AWG_DIR"
-    
     if opkg list-installed | grep -q kmod-amneziawg; then
         echo "kmod-amneziawg already installed"
     else
