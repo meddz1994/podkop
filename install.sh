@@ -151,13 +151,13 @@ add_tunnel() {
             ;;
 
         3)
-            opkg install opkg install openvpn-openssl luci-app-openvpn
+            opkg install openvpn-openssl luci-app-openvpn
             printf "\e[1;32mUse these instructions to configure https://itdog.info/nastrojka-klienta-openvpn-na-openwrt/\e[0m\n"
             break
             ;;
 
         4)
-            opkg install opkg install openconnect luci-proto-openconnect
+            opkg install openconnect luci-proto-openconnect
             printf "\e[1;32mUse these instructions to configure https://itdog.info/nastrojka-klienta-openconnect-na-openwrt/\e[0m\n"
             break
             ;;
@@ -172,73 +172,6 @@ add_tunnel() {
             ;;
         esac
     done
-}
-
-handler_network_restart() {
-    IS_SHOULD_RESTART_NETWORK=true
-}
-
-install_awg_packages() {
-    # الحصول على المعمارية الصحيحة
-    PKGARCH=$(opkg print-architecture | awk 'BEGIN {max=0} {if ($3 > max) {max = $3; arch = $2}} END {print arch}')
-
-    VERSION="24.10.0"
-    BASE_URL="https://github.com/Slava-Shchipunov/awg-openwrt/releases/download/v${VERSION}/"
-    AWG_DIR="/tmp/amneziawg"
-    mkdir -p "$AWG_DIR"
-    
-    if opkg list-installed | grep -q kmod-amneziawg; then
-        echo "kmod-amneziawg already installed"
-    else
-        KMOD_AMNEZIAWG_FILENAME="kmod-amneziawg_v${VERSION}_${PKGARCH}.ipk"
-        DOWNLOAD_URL="${BASE_URL}${KMOD_AMNEZIAWG_FILENAME}"
-        wget -O "$AWG_DIR/$KMOD_AMNEZIAWG_FILENAME" "$DOWNLOAD_URL"
-
-        if [ $? -eq 0 ]; then
-            echo "kmod-amneziawg file downloaded successfully"
-        else
-            echo "Error downloading kmod-amneziawg. Please, install kmod-amneziawg manually and run the script again"
-            exit 1
-        fi
-        
-        opkg install "$AWG_DIR/$KMOD_AMNEZIAWG_FILENAME"
-    fi
-
-    if opkg list-installed | grep -q amneziawg-tools; then
-        echo "amneziawg-tools already installed"
-    else
-        AMNEZIAWG_TOOLS_FILENAME="amneziawg-tools_v${VERSION}_${PKGARCH}.ipk"
-        DOWNLOAD_URL="${BASE_URL}${AMNEZIAWG_TOOLS_FILENAME}"
-        wget -O "$AWG_DIR/$AMNEZIAWG_TOOLS_FILENAME" "$DOWNLOAD_URL"
-
-        if [ $? -eq 0 ]; then
-            echo "amneziawg-tools file downloaded successfully"
-        else
-            echo "Error downloading amneziawg-tools. Please, install amneziawg-tools manually and run the script again"
-            exit 1
-        fi
-
-        opkg install "$AWG_DIR/$AMNEZIAWG_TOOLS_FILENAME"
-    fi
-    
-    if opkg list-installed | grep -q luci-app-amneziawg; then
-        echo "luci-app-amneziawg already installed"
-    else
-        LUCI_APP_AMNEZIAWG_FILENAME="luci-app-amneziawg_v${VERSION}_${PKGARCH}.ipk"
-        DOWNLOAD_URL="${BASE_URL}${LUCI_APP_AMNEZIAWG_FILENAME}"
-        wget -O "$AWG_DIR/$LUCI_APP_AMNEZIAWG_FILENAME" "$DOWNLOAD_URL"
-
-        if [ $? -eq 0 ]; then
-            echo "luci-app-amneziawg file downloaded successfully"
-        else
-            echo "Error downloading luci-app-amneziawg. Please, install luci-app-amneziawg manually and run the script again"
-            exit 1
-        fi
-
-        opkg install "$AWG_DIR/$LUCI_APP_AMNEZIAWG_FILENAME"
-    fi
-
-    rm -rf "$AWG_DIR"
 }
 
 
