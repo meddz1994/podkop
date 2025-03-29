@@ -266,7 +266,6 @@ install_awg_packages() {
     rm -rf "$AWG_DIR"
 }
 
-
 wg_awg_setup() {
     PROTOCOL_NAME=$1
     printf "\033[32;1mConfigure ${PROTOCOL_NAME}\033[0m\n"
